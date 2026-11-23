@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
+import { redirect } from "next/navigation";
 import { LoginForm } from "@/components/LoginForm";
+import { getSessionUser } from "@/lib/auth";
 
 export const metadata: Metadata = {
   title: "Sign in"
@@ -10,6 +12,12 @@ export default async function LoginPage({
 }: {
   searchParams: Promise<{ next?: string }>;
 }) {
+  // A signed-in visitor with a live account has no reason to see this page.
+  // getSessionUser reads the account from the database, so a deactivated user
+  // is left here instead of being redirected back into the app.
+  const user = await getSessionUser();
+  if (user) redirect("/");
+
   const params = await searchParams;
   const raw = params.next;
   const nextPath =

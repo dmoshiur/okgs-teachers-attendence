@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getActiveTeachers } from "@/lib/teachers";
+import { getActiveTeachers, filterByInclude } from "@/lib/teachers";
 import { getSettings } from "@/lib/settings";
 import { getLogoAsPng } from "@/lib/logo";
 import { buildSheet, sheetFileName } from "@/lib/sheet";
 import { renderAttendancePdf } from "@/lib/pdf";
 import { generateQuerySchema } from "@/lib/validation";
 import { firstIssue, logRouteError, publicErrorMessage } from "@/lib/api";
+import { requireActiveUser } from "@/lib/auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -14,6 +15,9 @@ const GENERIC_ERROR = "Could not generate the PDF.";
 
 export async function GET(request: NextRequest) {
   try {
+    const auth = await requireActiveUser();
+    if (!auth.ok) return auth.response;
+
     const parsed = generateQuerySchema.safeParse(
       Object.fromEntries(request.nextUrl.searchParams.entries())
     );
@@ -31,8 +35,9 @@ export async function GET(request: NextRequest) {
     const sheet = buildSheet({
       month: parsed.data.month,
       year: parsed.data.year,
-      teachers,
-      settings
+      teachers: filterByInclude(teachers, parsed.data.include),
+      settings,
+      include: parsed.data.include ?? "all"
     });
 
     const buffer = await renderAttendancePdf(sheet, logo);

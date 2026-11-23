@@ -2,13 +2,17 @@ import { NextRequest, NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
 import { ensureReady } from "@/lib/db";
 import { teachers } from "@/lib/schema";
+import { requireActiveUser } from "@/lib/auth";
 import { reorderSchema } from "@/lib/validation";
-import { firstIssue } from "@/lib/api";
+import { firstIssue, logRouteError, publicErrorMessage } from "@/lib/api";
 
 export const runtime = "nodejs";
 
 export async function POST(request: NextRequest) {
   try {
+    const auth = await requireActiveUser();
+    if (!auth.ok) return auth.response;
+
     const body = await request.json().catch(() => null);
     const parsed = reorderSchema.safeParse(body);
     if (!parsed.success) {
@@ -39,7 +43,10 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ ok: true });
   } catch (error) {
-    console.error("[teachers] reorder failed", error);
-    return NextResponse.json({ error: "Could not reorder teachers." }, { status: 500 });
+    logRouteError("teachers:reorder", error);
+    return NextResponse.json(
+      { error: publicErrorMessage("Could not reorder teachers.", error) },
+      { status: 500 }
+    );
   }
 }

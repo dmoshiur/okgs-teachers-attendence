@@ -5,7 +5,6 @@ import {
   AlignmentType,
   BorderStyle,
   Document,
-  Header,
   HeightRule,
   HorizontalPositionRelativeFrom,
   ImageRun,
@@ -27,7 +26,10 @@ import {
 } from "docx";
 import {
   COLUMN_WIDTHS_TWIPS,
-  NAME_ROW_HEIGHT,
+  CONTENT_MARGIN,
+  DAY_ROW_HEIGHT_TWIPS,
+  DESIGNATION_FONT_SIZE,
+  HEADER_ROW_HEIGHT,
   TABLE_WIDTH_TWIPS,
   splitScriptRuns,
   type SheetData,
@@ -123,7 +125,9 @@ function cellParagraph(options: {
   const { text = "", align = AlignmentType.CENTER, bold = false, keepNext = true, size = 22 } = options;
   return new Paragraph({
     alignment: align,
-    spacing: { after: 0, line: 380, lineRule: LineRuleType.AUTO },
+    // Single spacing plus an explicit row height keeps the 31 day rows at
+    // exactly the height the layout expects (see DAY_ROW_HEIGHT_TWIPS).
+    spacing: { after: 0, line: 240, lineRule: LineRuleType.AUTO },
     keepNext,
     children: text ? makeRuns(text, size, bold) : []
   });
@@ -148,6 +152,9 @@ function shadedCell(options: {
 
 function buildNameRow(pageTeachers: SheetSlot[], sheet: SheetData, keepNext: boolean): TableRow {
   const widths = [3114, 3144, 3062];
+  const nameHeight = sheet.layout.nameRowHeight;
+  const showDesignation = sheet.showDesignation;
+
   const cells: TableCell[] = [
     shadedCell({
       width: COLUMN_WIDTHS_TWIPS[0],
@@ -161,17 +168,31 @@ function buildNameRow(pageTeachers: SheetSlot[], sheet: SheetData, keepNext: boo
         ? `${slot.serial}.`
         : ""
       : `${slot.serial}. ${slot.name}`;
+
+    const children: Paragraph[] = [
+      new Paragraph({
+        spacing: { after: 0, line: 240, lineRule: LineRuleType.AUTO },
+        keepNext,
+        children: label ? makeRuns(label, 22) : []
+      })
+    ];
+
+    // Only when the setting is on; otherwise the cell stays "N. Name".
+    if (showDesignation && slot.designation) {
+      children.push(
+        new Paragraph({
+          spacing: { after: 0, line: 240, lineRule: LineRuleType.AUTO },
+          keepNext: false,
+          children: makeRuns(slot.designation, DESIGNATION_FONT_SIZE * 2)
+        })
+      );
+    }
+
     cells.push(
       shadedCell({
         width: widths[index],
         columnSpan: 3,
-        children: [
-          new Paragraph({
-            spacing: { after: 0, line: 240, lineRule: LineRuleType.AUTO },
-            keepNext,
-            children: label ? makeRuns(label, 22) : []
-          })
-        ]
+        children
       })
     );
   });
@@ -179,7 +200,7 @@ function buildNameRow(pageTeachers: SheetSlot[], sheet: SheetData, keepNext: boo
   return new TableRow({
     cantSplit: true,
     keepNext,
-    height: { value: Math.round(NAME_ROW_HEIGHT * 20), rule: HeightRule.ATLEAST },
+    height: { value: Math.round(nameHeight * 20), rule: HeightRule.ATLEAST },
     children: cells
   });
 }
@@ -189,6 +210,7 @@ function buildHeaderRow(keepNext: boolean): TableRow {
   return new TableRow({
     cantSplit: true,
     keepNext,
+    height: { value: Math.round(HEADER_ROW_HEIGHT * 20), rule: HeightRule.ATLEAST },
     children: headers.map(
       (header, index) =>
         new TableCell({
@@ -221,7 +243,12 @@ function buildDayRow(day: number, sheet: SheetData, keepNext: boolean): TableRow
     );
   }
 
-  return new TableRow({ cantSplit: true, keepNext, children: cells });
+  return new TableRow({
+    cantSplit: true,
+    keepNext,
+    height: { value: DAY_ROW_HEIGHT_TWIPS, rule: HeightRule.ATLEAST },
+    children: cells
+  });
 }
 
 function buildTable(pageTeachers: SheetSlot[], sheet: SheetData): Table {
@@ -251,21 +278,28 @@ function buildTable(pageTeachers: SheetSlot[], sheet: SheetData): Table {
   });
 }
 
-function buildHeader(sheet: SheetData, logo: PngLogo | null): Header {
+/**
+ * The heading lives in the body, not in a Word header, on every page.
+ *
+ * Word expands the text area downwards when a header is taller than the space
+ * above the top margin, and the page border is measured from that text area —
+ * so a header would move the border away from the intended 0.5 in. Keeping the
+ * heading in the body makes both the border position and the table position
+ * exact.
+ */
+function buildHeading(sheet: SheetData, logo: PngLogo | null): Paragraph[] {
   const boxWidthPx = (2.2 / 2.54) * 96;
   const boxHeightPx = (2.5 / 2.54) * 96;
   const scale = logo ? Math.min(boxWidthPx / logo.width, boxHeightPx / logo.height) : 0;
   const imageWidth = logo ? Math.max(1, Math.round(logo.width * scale)) : 0;
   const imageHeight = logo ? Math.max(1, Math.round(logo.height * scale)) : 0;
 
-  const schoolNameRuns = makeRuns(sheet.schoolName, 46, true);
-  const titleRuns = makeRuns(sheet.title, 30);
-
-  const headerParagraph = new Paragraph({
+  const schoolParagraph = new Paragraph({
     alignment: AlignmentType.CENTER,
     spacing: { after: 200, line: 276, lineRule: LineRuleType.AUTO },
+    keepNext: true,
     children: [
-      ...schoolNameRuns,
+      ...makeRuns(sheet.schoolName, 46, true),
       ...(logo
         ? [
             new ImageRun({
@@ -291,30 +325,36 @@ function buildHeader(sheet: SheetData, logo: PngLogo | null): Header {
     ]
   });
 
-  return new Header({
-    children: [
-      headerParagraph,
-      new Paragraph({
-        alignment: AlignmentType.CENTER,
-        spacing: { after: 0, line: 240, lineRule: LineRuleType.AUTO },
-        children: titleRuns
-      }),
-      emptyParagraph(),
-      emptyParagraph()
-    ]
-  });
+  return [
+    schoolParagraph,
+    new Paragraph({
+      alignment: AlignmentType.CENTER,
+      spacing: { after: 0, line: 240, lineRule: LineRuleType.AUTO },
+      keepNext: true,
+      children: makeRuns(sheet.title, 30)
+    }),
+    emptyParagraph({ keepNext: true }),
+    emptyParagraph({ keepNext: true })
+  ];
 }
 
 function buildDocument(sheet: SheetData, logo: PngLogo | null): Document {
   const fonts = getFontBuffers();
-  const body: Array<Paragraph | Table> = [emptyParagraph({ keepNext: true })];
+  const body: Array<Paragraph | Table> = [];
 
   sheet.pages.forEach((pageTeachers, index) => {
     if (index > 0) body.push(emptyParagraph({ pageBreakBefore: true, keepNext: true }));
+    body.push(...buildHeading(sheet, logo));
     body.push(buildTable(pageTeachers, sheet));
   });
 
   body.push(emptyParagraph());
+
+  // 1080 twips = 54 pt (0.75 in). The border is drawn 18 pt outside the text
+  // area (offsetFrom TEXT), which puts its outer line at 36 pt = 0.5 in from
+  // every paper edge, and leaves 0.63 cm of clear space around the content.
+  const MARGIN_TWIPS = Math.round(CONTENT_MARGIN * 20);
+  const BORDER_SPACE = Math.round(CONTENT_MARGIN - 36);
 
   return new Document({
     fonts: [
@@ -333,22 +373,29 @@ function buildDocument(sheet: SheetData, logo: PngLogo | null): Document {
         properties: {
           page: {
             size: { width: 11907, height: 16839 },
-            margin: { top: 360, right: 360, bottom: 360, left: 360, header: 720, footer: 720, gutter: 0 },
+            margin: {
+              top: MARGIN_TWIPS,
+              right: MARGIN_TWIPS,
+              bottom: MARGIN_TWIPS,
+              left: MARGIN_TWIPS,
+              header: MARGIN_TWIPS,
+              footer: 720,
+              gutter: 0
+            },
             pageNumbers: { start: 1 },
             borders: {
               pageBorders: {
                 display: PageBorderDisplay.ALL_PAGES,
-                offsetFrom: PageBorderOffsetFrom.PAGE
+                offsetFrom: PageBorderOffsetFrom.TEXT
               },
-              pageBorderTop: { style: BorderStyle.TRIPLE, size: 12, color: "000000", space: 6 },
-              pageBorderLeft: { style: BorderStyle.TRIPLE, size: 12, color: "000000", space: 6 },
-              pageBorderBottom: { style: BorderStyle.TRIPLE, size: 12, color: "000000", space: 6 },
-              pageBorderRight: { style: BorderStyle.TRIPLE, size: 12, color: "000000", space: 6 }
+              pageBorderTop: { style: BorderStyle.TRIPLE, size: 12, color: "000000", space: BORDER_SPACE },
+              pageBorderLeft: { style: BorderStyle.TRIPLE, size: 12, color: "000000", space: BORDER_SPACE },
+              pageBorderBottom: { style: BorderStyle.TRIPLE, size: 12, color: "000000", space: BORDER_SPACE },
+              pageBorderRight: { style: BorderStyle.TRIPLE, size: 12, color: "000000", space: BORDER_SPACE }
             }
           },
           grid: { linePitch: 0, charSpace: 0 }
         },
-        headers: { default: buildHeader(sheet, logo) },
         children: body
       }
     ]

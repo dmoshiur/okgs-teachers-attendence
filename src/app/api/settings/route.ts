@@ -2,23 +2,33 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSettings, updateSettings } from "@/lib/settings";
 import { getLogoVersion } from "@/lib/logo";
 import { settingsSchema } from "@/lib/validation";
-import { firstIssue } from "@/lib/api";
+import { firstIssue, logRouteError, publicErrorMessage } from "@/lib/api";
+import { requireSuperAdmin } from "@/lib/auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
+    const auth = await requireSuperAdmin();
+    if (!auth.ok) return auth.response;
+
     const [settings, logoVersion] = await Promise.all([getSettings(), getLogoVersion()]);
     return NextResponse.json({ settings, logoVersion });
   } catch (error) {
-    console.error("[settings] load failed", error);
-    return NextResponse.json({ error: "Could not load settings." }, { status: 500 });
+    logRouteError("settings:load", error);
+    return NextResponse.json(
+      { error: publicErrorMessage("Could not load settings.", error) },
+      { status: 500 }
+    );
   }
 }
 
 export async function PUT(request: NextRequest) {
   try {
+    const auth = await requireSuperAdmin();
+    if (!auth.ok) return auth.response;
+
     const body = await request.json().catch(() => null);
     const parsed = settingsSchema.safeParse(body);
     if (!parsed.success) {
@@ -28,7 +38,10 @@ export async function PUT(request: NextRequest) {
     await updateSettings(parsed.data);
     return NextResponse.json({ ok: true, settings: parsed.data });
   } catch (error) {
-    console.error("[settings] update failed", error);
-    return NextResponse.json({ error: "Could not save settings." }, { status: 500 });
+    logRouteError("settings:update", error);
+    return NextResponse.json(
+      { error: publicErrorMessage("Could not save settings.", error) },
+      { status: 500 }
+    );
   }
 }

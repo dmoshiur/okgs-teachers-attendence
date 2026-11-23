@@ -13,20 +13,23 @@ import {
 } from "@react-pdf/renderer";
 import {
   BENGALI_LINE_HEIGHT_RATIO,
+  BORDER_LINES,
+  BORDER_OFFSET,
+  BORDER_STEP,
+  BORDER_WIDTH,
+  CM,
   COLUMN_WIDTHS,
+  CONTENT_MARGIN,
   DAY_ROW_HEIGHT,
-  EMPTY_PARAGRAPH_HEIGHT,
+  DESIGNATION_FONT_SIZE,
   HEADER_ROW_HEIGHT,
-  HEADER_TOP,
-  NAME_ROW_HEIGHT,
-  NAME_ROW_HEIGHT_BENGALI,
   PAGE_HEIGHT,
-  PAGE_MARGIN,
   PAGE_WIDTH,
   TABLE_LEFT,
   TABLE_WIDTH,
   TINOS_LINE_HEIGHT_RATIO,
   containsBengali,
+  nameRowHeightFor,
   splitScriptRuns,
   type SheetData,
   type SheetSlot
@@ -45,8 +48,6 @@ const FONT_FILES = [
   "NotoSerifBengali-Regular.ttf",
   "NotoSerifBengali-Bold.ttf"
 ] as const;
-
-const CM = 28.3464567;
 
 let fontsRegistered = false;
 
@@ -173,63 +174,36 @@ function CellText({
   );
 }
 
+/**
+ * Three concentric 1.5 pt lines, the outermost 0.5 in in from the paper edge.
+ * Drawn inside the printable area of every A4 printer.
+ */
 function PageBorder() {
   return (
-    <View
-      style={{
-        position: "absolute",
-        top: 0,
-        left: 0,
-        width: PAGE_WIDTH,
-        height: PAGE_HEIGHT
-      }}
-    >
-      {[6, 9, 12].map((offset) => (
-        <View
-          key={offset}
-          style={{
-            position: "absolute",
-            top: offset,
-            left: offset,
-            right: offset,
-            bottom: offset,
-            borderWidth: 1.5,
-            borderColor: "#000000"
-          }}
-        />
-      ))}
-    </View>
+    <>
+      {BORDER_LINES.map((line) => {
+        const offset = BORDER_OFFSET + line * BORDER_STEP;
+        return (
+          <View
+            key={offset}
+            style={{
+              position: "absolute",
+              top: offset,
+              left: offset,
+              width: PAGE_WIDTH - offset * 2,
+              height: PAGE_HEIGHT - offset * 2,
+              borderWidth: BORDER_WIDTH,
+              borderColor: "#000000"
+            }}
+          />
+        );
+      })}
+    </>
   );
 }
 
-type Layout = {
-  schoolLineHeight: number;
-  titleTop: number;
-  titleLineHeight: number;
-  headerBottom: number;
-  tableTop: number;
-};
-
-function computeLayout(sheet: SheetData): Layout {
-  const schoolLineHeight =
-    23 * (containsBengali(sheet.schoolName) ? BENGALI_LINE_HEIGHT_RATIO : TINOS_LINE_HEIGHT_RATIO);
-  const titleTop = HEADER_TOP + schoolLineHeight + 10;
-  const titleLineHeight =
-    15 * (containsBengali(sheet.title) ? BENGALI_LINE_HEIGHT_RATIO : TINOS_LINE_HEIGHT_RATIO);
-  const headerBottom = titleTop + titleLineHeight + 2 * EMPTY_PARAGRAPH_HEIGHT;
-  const tableTop = headerBottom + EMPTY_PARAGRAPH_HEIGHT;
-  return { schoolLineHeight, titleTop, titleLineHeight, headerBottom, tableTop };
-}
-
-function Header({
-  sheet,
-  logo,
-  layout
-}: {
-  sheet: SheetData;
-  logo: PngLogo | null;
-  layout: Layout;
-}) {
+function Header({ sheet, logo }: { sheet: SheetData; logo: PngLogo | null }) {
+  const layout = sheet.layout;
   const boxWidth = 2.2 * CM;
   const boxHeight = 2.5 * CM;
   const scale = logo ? Math.min(boxWidth / logo.width, boxHeight / logo.height) : 0;
@@ -242,8 +216,8 @@ function Header({
         <View
           style={{
             position: "absolute",
-            top: HEADER_TOP + 0.056 * CM,
-            left: PAGE_MARGIN + 0.75 * CM,
+            top: CONTENT_MARGIN + 0.056 * CM,
+            left: CONTENT_MARGIN + 0.75 * CM,
             width: logoWidth,
             height: logoHeight
           }}
@@ -259,9 +233,9 @@ function Header({
         lineHeight={containsBengali(sheet.schoolName) ? BENGALI_LINE_HEIGHT_RATIO : TINOS_LINE_HEIGHT_RATIO}
         style={{
           position: "absolute",
-          top: HEADER_TOP,
-          left: PAGE_MARGIN,
-          right: PAGE_MARGIN,
+          top: CONTENT_MARGIN,
+          left: CONTENT_MARGIN,
+          right: CONTENT_MARGIN,
           textAlign: "center"
         }}
       />
@@ -272,8 +246,8 @@ function Header({
         style={{
           position: "absolute",
           top: layout.titleTop,
-          left: PAGE_MARGIN,
-          right: PAGE_MARGIN,
+          left: CONTENT_MARGIN,
+          right: CONTENT_MARGIN,
           textAlign: "center"
         }}
       />
@@ -281,18 +255,11 @@ function Header({
   );
 }
 
-function SheetTable({
-  pageTeachers,
-  sheet,
-  tableTop
-}: {
-  pageTeachers: SheetSlot[];
-  sheet: SheetData;
-  tableTop: number;
-}) {
-  const nameHeight = pageTeachers.some((slot) => slot.name && containsBengali(slot.name))
-    ? NAME_ROW_HEIGHT_BENGALI
-    : NAME_ROW_HEIGHT;
+function SheetTable({ pageTeachers, sheet }: { pageTeachers: SheetSlot[]; sheet: SheetData }) {
+  const layout = sheet.layout;
+  const nameHeight = layout.nameRowHeight;
+  const baseNameHeight = nameRowHeightFor(pageTeachers, false);
+  const designationHeight = nameHeight - baseNameHeight;
   const rowHeights = [nameHeight, HEADER_ROW_HEIGHT, ...Array<number>(sheet.days).fill(DAY_ROW_HEIGHT)];
   const totalHeight = rowHeights.reduce((total, height) => total + height, 0);
   const children: React.ReactNode[] = [];
@@ -444,12 +411,29 @@ function SheetTable({
         x={nameCells[index].x}
         y={0}
         width={nameCells[index].width}
-        height={nameHeight}
+        height={baseNameHeight}
         text={label}
         align="left"
         lineHeightRatio={lineHeightRatio}
       />
     );
+
+    // Only when the setting is on; otherwise the cell stays "N. Name".
+    if (sheet.showDesignation && slot.designation) {
+      children.push(
+        <CellText
+          key={`designation-${index}`}
+          x={nameCells[index].x}
+          y={baseNameHeight}
+          width={nameCells[index].width}
+          height={designationHeight}
+          text={slot.designation}
+          align="left"
+          fontSize={DESIGNATION_FONT_SIZE}
+          lineHeightRatio={containsBengali(slot.designation) ? BENGALI_LINE_HEIGHT_RATIO : TINOS_LINE_HEIGHT_RATIO}
+        />
+      );
+    }
   });
 
   for (let day = 1; day <= sheet.days; day += 1) {
@@ -470,7 +454,7 @@ function SheetTable({
       style={{
         position: "absolute",
         left: TABLE_LEFT,
-        top: tableTop,
+        top: layout.tableTop,
         width: TABLE_WIDTH,
         height: totalHeight
       }}
@@ -481,8 +465,6 @@ function SheetTable({
 }
 
 function AttendanceDocument({ sheet, logo }: { sheet: SheetData; logo: PngLogo | null }) {
-  const layout = computeLayout(sheet);
-
   return (
     <Document
       title={sheet.title}
@@ -493,8 +475,8 @@ function AttendanceDocument({ sheet, logo }: { sheet: SheetData; logo: PngLogo |
       {sheet.pages.map((pageTeachers, index) => (
         <Page key={index} size="A4" style={{ position: "relative" }}>
           <PageBorder />
-          <Header sheet={sheet} logo={logo} layout={layout} />
-          <SheetTable pageTeachers={pageTeachers} sheet={sheet} tableTop={layout.tableTop} />
+          <Header sheet={sheet} logo={logo} />
+          <SheetTable pageTeachers={pageTeachers} sheet={sheet} />
         </Page>
       ))}
     </Document>

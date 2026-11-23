@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { MAX_LOGO_BYTES, saveLogo } from "@/lib/logo";
+import { requireSuperAdmin } from "@/lib/auth";
 
 export const runtime = "nodejs";
 
@@ -15,6 +16,9 @@ const ACCEPTED_EXTENSIONS = [".png", ".jpg", ".jpeg", ".webp", ".svg"];
 
 export async function POST(request: NextRequest) {
   try {
+    const auth = await requireSuperAdmin();
+    if (!auth.ok) return auth.response;
+
     const formData = await request.formData();
     const file = formData.get("file");
 

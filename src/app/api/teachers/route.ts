@@ -1,26 +1,36 @@
 import { NextRequest, NextResponse } from "next/server";
 import { sql } from "drizzle-orm";
 import { ensureReady } from "@/lib/db";
-import { teachers } from "@/lib/schema";
-import { getActiveTeachers } from "@/lib/teachers";
+import { teachers, type TeacherType } from "@/lib/schema";
+import { getTeachers } from "@/lib/teachers";
+import { requireActiveUser } from "@/lib/auth";
 import { teacherCreateSchema } from "@/lib/validation";
-import { firstIssue } from "@/lib/api";
+import { firstIssue, logRouteError, publicErrorMessage } from "@/lib/api";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
-    const list = await getActiveTeachers();
+    const auth = await requireActiveUser();
+    if (!auth.ok) return auth.response;
+
+    const list = await getTeachers();
     return NextResponse.json({ teachers: list });
   } catch (error) {
-    console.error("[teachers] list failed", error);
-    return NextResponse.json({ error: "Could not load teachers." }, { status: 500 });
+    logRouteError("teachers:list", error);
+    return NextResponse.json(
+      { error: publicErrorMessage("Could not load teachers.", error) },
+      { status: 500 }
+    );
   }
 }
 
 export async function POST(request: NextRequest) {
   try {
+    const auth = await requireActiveUser();
+    if (!auth.ok) return auth.response;
+
     const body = await request.json().catch(() => null);
     const parsed = teacherCreateSchema.safeParse(body);
     if (!parsed.success) {
@@ -33,19 +43,35 @@ export async function POST(request: NextRequest) {
       .from(teachers);
     const sortOrder = Number(row?.max ?? 0) + 1;
 
+    const type: TeacherType = parsed.data.type === "staff" ? "staff" : "teacher";
+
     const [created] = await db
       .insert(teachers)
-      .values({ name: parsed.data.name, sortOrder, isActive: true })
+      .values({
+        name: parsed.data.name,
+        type,
+        designation: parsed.data.designation?.trim() ?? "",
+        sortOrder,
+        isActive: true
+      })
       .returning({
         id: teachers.id,
         name: teachers.name,
+        type: teachers.type,
+        designation: teachers.designation,
         sortOrder: teachers.sortOrder,
         isActive: teachers.isActive
       });
 
-    return NextResponse.json({ teacher: created }, { status: 201 });
+    return NextResponse.json(
+      { teacher: { ...created, type, designation: created.designation ?? "" } },
+      { status: 201 }
+    );
   } catch (error) {
-    console.error("[teachers] create failed", error);
-    return NextResponse.json({ error: "Could not add the teacher." }, { status: 500 });
+    logRouteError("teachers:create", error);
+    return NextResponse.json(
+      { error: publicErrorMessage("Could not add the teacher.", error) },
+      { status: 500 }
+    );
   }
 }

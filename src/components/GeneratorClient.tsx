@@ -16,18 +16,25 @@ import { Badge, Button, Card, CardBody, CardHeader, Field, Select, Spinner } fro
 import { useToast } from "@/components/Toast";
 import { MONTHS, daysInMonth } from "@/lib/sheet";
 import type { AppSettings } from "@/lib/settings";
+import type { IncludeFilter } from "@/lib/validation";
 
 type ActionKind = "pdf" | "docx" | "print";
 
 const YEARS = Array.from({ length: 111 }, (_, index) => 1990 + index);
 
+const INCLUDE_OPTIONS: Array<{ id: IncludeFilter; label: string; hint: string }> = [
+  { id: "all", label: "All", hint: "Teachers and staff" },
+  { id: "teachers", label: "Teachers only", hint: "Type = Teacher" },
+  { id: "staff", label: "Staff only", hint: "Type = Staff" }
+];
+
 export function GeneratorClient({
-  initialTeacherCount,
+  initialCounts,
   initialMonth,
   initialYear,
   settings
 }: {
-  initialTeacherCount: number;
+  initialCounts: { all: number; teachers: number; staff: number };
   initialMonth: number;
   initialYear: number;
   settings: Pick<AppSettings, "schoolName" | "titleTemplate">;
@@ -37,10 +44,11 @@ export function GeneratorClient({
 
   const [month, setMonth] = useState(initialMonth);
   const [year, setYear] = useState(initialYear);
+  const [include, setInclude] = useState<IncludeFilter>("all");
   const [previewVersion, setPreviewVersion] = useState(0);
   const [loading, setLoading] = useState(true);
   const [action, setAction] = useState<ActionKind | null>(null);
-  const [teacherCount, setTeacherCount] = useState(initialTeacherCount);
+  const [counts, setCounts] = useState(initialCounts);
 
   // Prefer the browser's local month/year so the default matches the user's
   // calendar even when the server runs in UTC. Only corrects when they differ.
@@ -53,17 +61,20 @@ export function GeneratorClient({
   }, []);
 
   const days = daysInMonth(year, month);
-  const pageCount = Math.max(1, Math.ceil(teacherCount / 3));
+  // Filtering happens before pagination, so the page count follows the selector.
+  const peopleCount = counts[include];
+  const pageCount = Math.max(1, Math.ceil(peopleCount / 3));
   const monthName = MONTHS[month - 1];
 
   const previewUrl = useMemo(() => {
     const params = new URLSearchParams({
       month: String(month),
       year: String(year),
+      include,
       v: String(previewVersion)
     });
     return `/api/generate/pdf?${params.toString()}#toolbar=0&navpanes=0`;
-  }, [month, year, previewVersion]);
+  }, [month, year, include, previewVersion]);
 
   useEffect(() => {
     setLoading(true);
@@ -82,21 +93,34 @@ export function GeneratorClient({
       const response = await fetch("/api/teachers", { cache: "no-store" });
       if (response.ok) {
         const data = (await response.json()) as { teachers?: unknown[] };
-        setTeacherCount(data.teachers?.length ?? 0);
+        const list = (data.teachers ?? []) as Array<{ type?: string; isActive?: boolean }>;
+        const active = list.filter((teacher) => teacher.isActive !== false);
+        setCounts({
+          all: active.length,
+          teachers: active.filter((teacher) => teacher.type !== "staff").length,
+          staff: active.filter((teacher) => teacher.type === "staff").length
+        });
       }
     } catch {
       // The preview itself still refreshes; the count is best-effort.
     }
   }, []);
 
+  function downloadUrl(kind: "pdf" | "docx"): string {
+    const params = new URLSearchParams({
+      month: String(month),
+      year: String(year),
+      include,
+      download: "1"
+    });
+    return `/api/generate/${kind}?${params.toString()}`;
+  }
+
   async function download(kind: "pdf" | "docx") {
     if (action) return;
     setAction(kind);
     try {
-      const response = await fetch(
-        `/api/generate/${kind}?month=${month}&year=${year}&download=1`,
-        { cache: "no-store" }
-      );
+      const response = await fetch(downloadUrl(kind), { cache: "no-store" });
       if (!response.ok) {
         const data = (await response.json().catch(() => null)) as { error?: string } | null;
         throw new Error(data?.error || "Download failed.");
@@ -133,7 +157,7 @@ export function GeneratorClient({
         }
       }
 
-      const response = await fetch(`/api/generate/pdf?month=${month}&year=${year}`, {
+      const response = await fetch(previewUrl.replace(/#.*$/, ""), {
         cache: "no-store"
       });
       if (!response.ok) throw new Error("Could not prepare the PDF for printing.");
@@ -174,7 +198,7 @@ export function GeneratorClient({
         <Card>
           <CardHeader
             title="Sheet setup"
-            description="Choose the month and year you want to print."
+            description="Choose the month, year and who to include."
           />
           <CardBody className="space-y-4">
             <div className="grid grid-cols-2 gap-3">
@@ -206,6 +230,28 @@ export function GeneratorClient({
               </Field>
             </div>
 
+            <Field
+              label="Include"
+              htmlFor="sheet-include"
+              hint={
+                <span>
+                  {counts.teachers} teacher{counts.teachers === 1 ? "" : "s"} · {counts.staff} staff
+                </span>
+              }
+            >
+              <Select
+                id="sheet-include"
+                value={include}
+                onChange={(event) => setInclude(event.target.value as IncludeFilter)}
+              >
+                {INCLUDE_OPTIONS.map((option) => (
+                  <option key={option.id} value={option.id}>
+                    {option.label}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+
             <div className="flex flex-wrap gap-2">
               <Badge tone="blue">
                 <CalendarDays className="mr-1 h-3 w-3" />
@@ -213,7 +259,7 @@ export function GeneratorClient({
               </Badge>
               <Badge>
                 <Users className="mr-1 h-3 w-3" />
-                {teacherCount} teacher{teacherCount === 1 ? "" : "s"}
+                {peopleCount} {include === "staff" ? "staff" : include === "teachers" ? "teachers" : "people"}
               </Badge>
               <Badge tone="green">
                 {pageCount} page{pageCount === 1 ? "" : "s"} · {days} days
@@ -276,16 +322,16 @@ export function GeneratorClient({
               </Button>
             </div>
             <p className="text-xs leading-5 text-slate-500">
-              The preview regenerates with the latest teacher list, logo and settings every
-              time you refresh.
+              The preview regenerates with the latest staff list, logo and settings every time
+              you refresh.
             </p>
-            {teacherCount === 0 ? (
+            {peopleCount === 0 ? (
               <div className="flex items-start gap-2 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2.5">
                 <Info className="mt-0.5 h-4 w-4 shrink-0 text-school-600" />
                 <p className="text-xs leading-5 text-school-900">
-                  No teachers yet. The sheet will show numbered empty slots.{" "}
+                  Nobody matches this selection yet. The sheet will show numbered empty slots.{" "}
                   <Link href="/teachers" className="font-semibold underline underline-offset-2">
-                    Add teachers
+                    Add people
                   </Link>
                   .
                 </p>
@@ -323,7 +369,7 @@ export function GeneratorClient({
             >
               <iframe
                 ref={iframeRef}
-                key={`${month}-${year}-${previewVersion}`}
+                key={`${month}-${year}-${include}-${previewVersion}`}
                 src={previewUrl}
                 title="Attendance sheet preview"
                 onLoad={() => setLoading(false)}

@@ -4,6 +4,7 @@ import { sql } from "drizzle-orm";
 import * as schema from "./schema";
 import { admins } from "./schema";
 import { hashPassword } from "./auth";
+import { runMigrations } from "./migrations";
 
 type Database = LibSQLDatabase<typeof schema>;
 
@@ -36,18 +37,29 @@ function getDatabase(): Database {
   return globalDb.db;
 }
 
+/**
+ * Fresh-database schema. Columns added later are also listed here so a new
+ * install matches a migrated one; `runMigrations` adds any that are missing
+ * from a pre-existing table.
+ */
 const CREATE_TABLES = [
   `CREATE TABLE IF NOT EXISTS admins (
     id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
     username TEXT NOT NULL,
     password_hash TEXT NOT NULL,
+    display_name TEXT NOT NULL DEFAULT '',
+    role TEXT NOT NULL DEFAULT 'admin',
+    is_active INTEGER NOT NULL DEFAULT 1,
+    created_at INTEGER NOT NULL DEFAULT 0,
     CONSTRAINT admins_username_unique UNIQUE (username)
   )`,
   `CREATE TABLE IF NOT EXISTS teachers (
     id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
     name TEXT NOT NULL,
     sort_order INTEGER NOT NULL DEFAULT 0,
-    is_active INTEGER NOT NULL DEFAULT 1
+    is_active INTEGER NOT NULL DEFAULT 1,
+    type TEXT NOT NULL DEFAULT 'teacher',
+    designation TEXT NOT NULL DEFAULT ''
   )`,
   `CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY NOT NULL,
@@ -64,6 +76,7 @@ async function ensureSchema(db: Database) {
   for (const statement of CREATE_TABLES) {
     await db.run(sql.raw(statement));
   }
+  await runMigrations(db);
 }
 
 async function countAdmins(db: Database): Promise<number> {
@@ -72,8 +85,10 @@ async function countAdmins(db: Database): Promise<number> {
 }
 
 /**
- * Seeds exactly one admin on a fresh database. Safe to call on every boot:
- * it only inserts when the table is empty and never updates an existing row.
+ * Seeds exactly one account on a fresh database. Safe to call on every boot:
+ * it only inserts when the table is empty and never updates or recreates an
+ * existing user, so changing ADMIN_PASSWORD later has no effect on a live
+ * account.
  */
 async function seedAdmin(db: Database) {
   if ((await countAdmins(db)) > 0) return;
@@ -95,14 +110,21 @@ async function seedAdmin(db: Database) {
   // constraint plus ON CONFLICT DO NOTHING keeps this idempotent.
   await db
     .insert(admins)
-    .values({ username, passwordHash })
+    .values({
+      username,
+      passwordHash,
+      displayName: username,
+      role: "super_admin",
+      isActive: true,
+      createdAt: Math.floor(Date.now() / 1000)
+    })
     .onConflictDoNothing({ target: admins.username });
 
   if ((await countAdmins(db)) === 0) {
     throw new Error("Failed to seed the initial admin account.");
   }
 
-  console.log(`[db] seeded initial admin account "${username}".`);
+  console.log(`[db] seeded initial super admin account "${username}".`);
 }
 
 export function ensureReady(): Promise<Database> {

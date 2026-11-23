@@ -7,31 +7,44 @@ import {
   CalendarDays,
   LogOut,
   Settings,
+  UserRound,
+  UserRoundCog,
   Users,
   type LucideIcon
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/components/Toast";
+import type { AdminRole } from "@/lib/schema";
 
-const NAV: Array<{ href: string; label: string; icon: LucideIcon }> = [
+type NavItem = { href: string; label: string; icon: LucideIcon; superAdminOnly?: boolean };
+
+const NAV: NavItem[] = [
   { href: "/", label: "Generator", icon: CalendarDays },
-  { href: "/teachers", label: "Teachers", icon: Users },
-  { href: "/settings", label: "Settings", icon: Settings }
+  { href: "/teachers", label: "Staff & Teachers", icon: Users },
+  { href: "/users", label: "Users", icon: UserRoundCog, superAdminOnly: true },
+  { href: "/settings", label: "Settings", icon: Settings, superAdminOnly: true }
 ];
 
 export function Shell({
   title,
   subtitle,
+  role,
+  displayName,
   children
 }: {
   title: string;
   subtitle?: string;
+  role: AdminRole;
+  displayName?: string;
   children: ReactNode;
 }) {
   const pathname = usePathname();
   const router = useRouter();
   const { toast } = useToast();
   const [loggingOut, setLoggingOut] = useState(false);
+
+  const isSuperAdmin = role === "super_admin";
+  const items = NAV.filter((item) => !item.superAdminOnly || isSuperAdmin);
 
   async function handleLogout() {
     setLoggingOut(true);
@@ -62,7 +75,7 @@ export function Shell({
         </div>
 
         <nav className="flex-1 space-y-1 px-3 py-4">
-          {NAV.map((item) => {
+          {items.map((item) => {
             const active = pathname === item.href;
             const Icon = item.icon;
             return (
@@ -84,6 +97,23 @@ export function Shell({
         </nav>
 
         <div className="border-t border-white/10 p-3">
+          <Link
+            href="/account"
+            className={cn(
+              "mb-1 flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition",
+              pathname === "/account"
+                ? "bg-white/10 text-white"
+                : "text-white/70 hover:bg-white/10 hover:text-white"
+            )}
+          >
+            <UserRound className="h-4 w-4" />
+            <span className="truncate">
+              My account
+              <span className="ml-1 truncate text-xs font-normal text-white/40">
+                · {displayName || "signed in"}
+              </span>
+            </span>
+          </Link>
           <button
             type="button"
             onClick={handleLogout}
@@ -106,18 +136,27 @@ export function Shell({
             </span>
             <span className="text-sm font-semibold text-slate-900">Attendance Sheets</span>
           </Link>
-          <button
-            type="button"
-            onClick={handleLogout}
-            disabled={loggingOut}
-            className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-700"
-            aria-label="Log out"
-          >
-            <LogOut className="h-5 w-5" />
-          </button>
+          <div className="flex items-center gap-1">
+            <Link
+              href="/account"
+              aria-label="My account"
+              className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-700"
+            >
+              <UserRound className="h-5 w-5" />
+            </Link>
+            <button
+              type="button"
+              onClick={handleLogout}
+              disabled={loggingOut}
+              className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-700"
+              aria-label="Log out"
+            >
+              <LogOut className="h-5 w-5" />
+            </button>
+          </div>
         </div>
         <nav className="flex gap-1 overflow-x-auto px-2 pb-2">
-          {NAV.map((item) => {
+          {items.map((item) => {
             const active = pathname === item.href;
             const Icon = item.icon;
             return (
