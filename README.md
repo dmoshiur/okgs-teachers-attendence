@@ -17,7 +17,7 @@ staff management, user accounts, and branding settings.
 | **Users (`/users`)** | Super admins create accounts, set roles, reset passwords, deactivate and delete users |
 | **Settings (`/settings`)** | School name, sheet-title template, logo upload/reset, print options |
 | **My account (`/account`)** | Every user edits their own display name and password |
-| **Auth** | `httpOnly` JWT session cookie, bcrypt passwords, role-aware middleware |
+| **Auth** | `httpOnly` JWT session cookie (user id only), bcrypt passwords, database-backed guards |
 
 ### Roles
 
@@ -29,10 +29,25 @@ staff management, user accounts, and branding settings.
 | Open **Settings** (name, logo, title template) | ✅ | ❌ |
 | My account | ✅ | ✅ |
 
-Permissions are enforced in **middleware** *and* in every API route, which re-reads the
-account from the database on each request. A deactivated account is rejected on its next
-request and cannot sign in. You cannot delete or deactivate yourself, and the last active
-super admin cannot be deleted, demoted or deactivated.
+Permissions are enforced in **every page, layout and API route** through one shared guard,
+`requireUser()` in `src/lib/auth.ts`. It loads the account from the database by the id in
+the cookie and uses the **database values** for `role` and `is_active`; the session cookie
+never carries a role. That has two consequences worth knowing:
+
+- a session issued before roles existed keeps working — nothing in the token depends on
+  the old schema, so nobody has to sign out and back in after an upgrade;
+- changing a role or deactivating an account takes effect on the user's next request.
+
+Middleware (Edge runtime, no database access) only checks that a signed session exists and
+never decides anything from a role. A plain admin who opens `/users` or `/settings` by URL
+sees a **"You do not have permission"** page with a back button instead of being silently
+redirected home. A deactivated or deleted account is refused, its cookie is cleared, and the
+next navigation lands on `/login`.
+
+Every refusal is logged server-side as
+`[auth] access denied: user=<id> role=<role> reason=<reason>`, so a lockout can be read
+straight from the Vercel function logs. You cannot delete or deactivate yourself, and the
+last active super admin cannot be deleted, demoted or deactivated.
 
 ### Sheet layout
 
@@ -119,8 +134,9 @@ The app runs as Vercel serverless functions — there is no headless Chrome, no 
 filesystem storage, and no long-running server. Logos live in the database as WebP;
 fonts and the default logo are bundled into the function trace.
 
-> After a deployment that adds roles, sign out and back in once: the session cookie
-> carries the role, and a cookie issued by the previous version has none.
+> Existing sessions keep working after this update: the cookie contains only the
+> user id, so a session issued by an older build (which stored the role in the
+> token) is still accepted and the role is read fresh from the database.
 
 ## Scripts
 
@@ -137,19 +153,20 @@ fonts and the default logo are bundled into the function trace.
 ```
 src/
 ├── app/
-│   ├── page.tsx                 # Generator
+│   ├── (app)/                   # Route group: layout requires a signed-in user
+│   │   ├── page.tsx             # Generator
+│   │   ├── teachers/page.tsx    # Staff & Teachers
+│   │   ├── users/page.tsx       # User management (super admin, or a permission page)
+│   │   ├── settings/page.tsx    # Settings (super admin, or a permission page)
+│   │   └── account/page.tsx     # My account
 │   ├── login/page.tsx           # Sign in
-│   ├── teachers/page.tsx        # Staff & Teachers
-│   ├── users/page.tsx           # User management (super admin)
-│   ├── settings/page.tsx        # Settings (super admin)
-│   ├── account/page.tsx         # My account
 │   └── api/                     # auth, teachers, users, account, settings, logo, generate
 ├── components/                  # Shell, forms, toast, UI primitives
 ├── lib/
 │   ├── db.ts                    # libSQL client + schema bootstrap + super admin seed
 │   ├── migrations.ts            # Idempotent column migrations
 │   ├── schema.ts                # Drizzle schema
-│   ├── auth.ts                  # bcrypt + jose session JWT + role guards
+│   ├── auth.ts                  # bcrypt + jose session (user id only) + requireUser()
 │   ├── users.ts                 # User management and its safety rules
 │   ├── sheet.ts                 # Sheet model, geometry, Bangla run splitting
 │   ├── pdf.tsx                  # @react-pdf document
@@ -157,7 +174,7 @@ src/
 │   ├── logo.ts                  # sharp → WebP storage
 │   ├── settings.ts / teachers.ts / validation.ts
 ├── assets/fonts/                # Tinos + Noto Serif Bengali (embedded)
-└── middleware.ts                # Route + role protection
+└── middleware.ts                # Session check only (Edge runtime, no DB)
 ```
 
 ## Database schema
@@ -182,9 +199,16 @@ fresh database, and on one that was only partly migrated. Nothing is dropped and
 is rewritten: new columns arrive with defaults that keep existing data valid.
 
 - `teachers.type` defaults to `'teacher'` — existing people stay teachers.
-- `admins.role` defaults to `'admin'`, and the **oldest account is promoted to
-  `super_admin`** when no active super admin exists, so nobody is locked out of
-  Settings and Users after the update.
+- `admins.role` is repaired for any row whose role is missing, empty or unknown:
+  the account named by `ADMIN_USERNAME` becomes `super_admin`, otherwise the
+  **oldest account** does (before roles existed it was the only account, hence
+  the full administrator); every other account becomes a plain `admin`.
+- `admins.is_active` defaults to `1`, `display_name` to `''`, and `created_at`
+  gets a real timestamp instead of `0`.
+- A final safety net guarantees **at least one active super admin**: if none
+  exists, the account named by `ADMIN_USERNAME` (or, failing that, the oldest
+  account) is promoted. This is what unlocks Settings and Users if a database
+  was created before roles existed or was migrated by hand.
 
 The equivalent SQL is in `migrations/0001_staff_and_users.sql` for anyone who wants to
 apply it by hand:
@@ -197,6 +221,15 @@ SQLite has no `ADD COLUMN IF NOT EXISTS`, so a "duplicate column name" error sim
 means that column is already there.
 
 ## Troubleshooting
+
+**Users or Settings sends me to the home page / says I have no permission.** Both pages
+are super-admin only. Check the account's role in the database (`select id, username,
+role, is_active from admins;`) — it must be `super_admin` and `is_active = 1`. The
+migration repairs a missing or empty role on startup: the account named by
+`ADMIN_USERNAME` (or the oldest account) is promoted when no active super admin exists.
+Every refusal is logged as `[auth] access denied: user=<id> role=<role> reason=<reason>`,
+so the cause is visible in the Vercel function logs. A plain admin gets a permission page
+by design; only a super admin can open those pages.
 
 **PDF returns "Could not generate the PDF." on Vercel.** The route logs the real error to the
 function logs. The usual cause is a file that the serverless file tracer cannot see: the PDF

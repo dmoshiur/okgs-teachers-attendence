@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
 import { ensureReady } from "@/lib/db";
 import { teachers } from "@/lib/schema";
-import { requireActiveUser } from "@/lib/auth";
+import { requireUser } from "@/lib/auth";
 import { reorderSchema } from "@/lib/validation";
 import { firstIssue, logRouteError, publicErrorMessage } from "@/lib/api";
 
@@ -10,7 +10,7 @@ export const runtime = "nodejs";
 
 export async function POST(request: NextRequest) {
   try {
-    const auth = await requireActiveUser();
+    const auth = await requireUser();
     if (!auth.ok) return auth.response;
 
     const body = await request.json().catch(() => null);

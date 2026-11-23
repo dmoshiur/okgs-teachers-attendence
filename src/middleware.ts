@@ -6,29 +6,22 @@ const PUBLIC_PATHS = new Set([
   "/login",
   "/api/auth/login",
   "/api/auth/logout",
+  "/api/auth/clear",
   "/logo.png",
   "/favicon.ico"
 ]);
 
 /**
- * Paths only a super admin may reach. The same rule is enforced again inside
- * every handler (which reads the role from the database), so hiding a menu item
- * is never the only thing keeping an admin out.
+ * Middleware runs on the Edge runtime, so it **cannot query the database**. It
+ * therefore only answers one question: is there a signed session cookie?
+ *
+ * It deliberately does not decide anything from the role. Roles and account
+ * status are read from the database by `requireUser()` in `src/lib/auth.ts`,
+ * which every page, layout and API route calls. Deciding the role here (from a
+ * cookie claim) is what used to bounce a super admin to `/` when the cookie had
+ * been issued before the account was promoted: the token kept saying `admin`
+ * for the whole 7-day lifetime of the cookie.
  */
-const SUPER_ADMIN_PREFIXES = [
-  "/users",
-  "/settings",
-  "/api/users",
-  "/api/settings",
-  "/api/logo/upload",
-  "/api/logo/reset"
-];
-
-type Session = {
-  adminId: number;
-  role: string | null;
-};
-
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
@@ -46,8 +39,11 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  const session = await readSession(request);
-  if (!session) {
+  const adminId = await readSessionUserId(request);
+  if (adminId === null) {
+    console.error(
+      `[auth] access denied: user=anonymous role=none reason=no valid session cookie path=${pathname}`
+    );
     if (pathname.startsWith("/api/")) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
@@ -56,26 +52,11 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(loginUrl);
   }
 
-  const restricted = SUPER_ADMIN_PREFIXES.find(
-    (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`)
-  );
-
-  // A token issued before roles existed carries no role claim. Let it through
-  // here; the handler re-reads the role from the database and decides.
-  if (restricted && session.role !== null && session.role !== "super_admin") {
-    if (pathname.startsWith("/api/")) {
-      return NextResponse.json(
-        { error: "Only a super admin can do that." },
-        { status: 403 }
-      );
-    }
-    return NextResponse.redirect(new URL("/", request.url));
-  }
-
   return NextResponse.next();
 }
 
-async function readSession(request: NextRequest): Promise<Session | null> {
+/** Verifies the signature and returns the user id stored in the cookie. */
+async function readSessionUserId(request: NextRequest): Promise<number | null> {
   const token = request.cookies.get("session")?.value;
   const secret = getSessionSecretOrNull();
   if (!token || !secret) return null;
@@ -83,10 +64,7 @@ async function readSession(request: NextRequest): Promise<Session | null> {
     const { payload } = await jwtVerify(token, secret, { algorithms: ["HS256"] });
     const adminId = Number(payload.sub);
     if (!Number.isInteger(adminId) || adminId <= 0) return null;
-    return {
-      adminId,
-      role: typeof payload.role === "string" ? payload.role : null
-    };
+    return adminId;
   } catch {
     return null;
   }

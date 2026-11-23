@@ -5,8 +5,7 @@ import { admins } from "@/lib/schema";
 import {
   createSessionToken,
   setSessionCookie,
-  verifyPassword,
-  isSuperAdmin
+  verifyPassword
 } from "@/lib/auth";
 import { loginSchema } from "@/lib/validation";
 import { firstIssue } from "@/lib/api";
@@ -46,11 +45,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const token = await createSessionToken({
-      adminId: admin.id,
-      username: admin.username,
-      role: isSuperAdmin(admin.role) ? "super_admin" : "admin"
-    });
+    // The cookie carries only the account id; the role is read from the database
+    // on every request (see requireUser in src/lib/auth.ts).
+    const token = await createSessionToken(admin.id);
     await setSessionCookie(token);
 
     return NextResponse.json({

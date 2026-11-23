@@ -3,7 +3,7 @@ import { sql } from "drizzle-orm";
 import { ensureReady } from "@/lib/db";
 import { teachers, type TeacherType } from "@/lib/schema";
 import { getTeachers } from "@/lib/teachers";
-import { requireActiveUser } from "@/lib/auth";
+import { requireUser } from "@/lib/auth";
 import { teacherCreateSchema } from "@/lib/validation";
 import { firstIssue, logRouteError, publicErrorMessage } from "@/lib/api";
 
@@ -12,7 +12,7 @@ export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
-    const auth = await requireActiveUser();
+    const auth = await requireUser();
     if (!auth.ok) return auth.response;
 
     const list = await getTeachers();
@@ -28,7 +28,7 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
-    const auth = await requireActiveUser();
+    const auth = await requireUser();
     if (!auth.ok) return auth.response;
 
     const body = await request.json().catch(() => null);

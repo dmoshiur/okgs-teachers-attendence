@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { addTeachersInBulk } from "@/lib/teachers";
-import { requireActiveUser } from "@/lib/auth";
+import { requireUser } from "@/lib/auth";
 import { teacherBulkSchema } from "@/lib/validation";
 import { firstIssue, logRouteError, publicErrorMessage } from "@/lib/api";
 
@@ -9,7 +9,7 @@ export const runtime = "nodejs";
 /** Pastes many names at once; duplicates inside the batch or already stored are skipped. */
 export async function POST(request: NextRequest) {
   try {
-    const auth = await requireActiveUser();
+    const auth = await requireUser();
     if (!auth.ok) return auth.response;
 
     const body = await request.json().catch(() => null);
