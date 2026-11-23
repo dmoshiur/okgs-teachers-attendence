@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from "react";
-import { RotateCcw, Save, Upload, UserRoundCog } from "lucide-react";
+import { useRef, useState, type ChangeEvent, type FormEvent } from "react";
+import { RotateCcw, Save, Upload } from "lucide-react";
 import { Button, Card, CardBody, CardHeader, Field, Input, Spinner, Switch } from "@/components/ui";
 import { useToast } from "@/components/Toast";
 import { cn } from "@/lib/utils";
@@ -11,6 +11,7 @@ type Settings = {
   titleTemplate: string;
   fillEmptySlots: boolean;
   zebra: boolean;
+  showDesignation: boolean;
 };
 
 const ACCEPTED = ".png,.jpg,.jpeg,.webp,.svg";
@@ -42,43 +43,18 @@ export function SettingsClient({
   });
   const [fillEmptySlots, setFillEmptySlots] = useState(initialSettings.fillEmptySlots);
   const [zebra, setZebra] = useState(initialSettings.zebra);
+  const [showDesignation, setShowDesignation] = useState(initialSettings.showDesignation);
 
   const [logoVersion, setLogoVersion] = useState(initialLogoVersion);
   const [savingSheet, setSavingSheet] = useState(false);
-  const [savingToggle, setSavingToggle] = useState<"fillEmptySlots" | "zebra" | null>(null);
+  const [savingToggle, setSavingToggle] = useState<
+    "fillEmptySlots" | "zebra" | "showDesignation" | null
+  >(null);
   const [uploading, setUploading] = useState(false);
   const [resetting, setResetting] = useState(false);
   const fileInput = useRef<HTMLInputElement | null>(null);
 
-  const [username, setUsername] = useState("");
-  const [currentPassword, setCurrentPassword] = useState("");
-  const [newPassword, setNewPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
-  const [accountError, setAccountError] = useState<string | null>(null);
-  const [savingAccount, setSavingAccount] = useState(false);
-  const [accountUsername, setAccountUsername] = useState<string | null>(null);
-
   const logoSrc = `/api/logo?v=${encodeURIComponent(logoVersion)}`;
-
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      try {
-        const response = await fetch("/api/auth/me", { cache: "no-store" });
-        if (!response.ok) return;
-        const data = (await response.json()) as { username?: string };
-        if (!cancelled && data.username) {
-          setAccountUsername(data.username);
-          setUsername(data.username);
-        }
-      } catch {
-        // Non-critical: the account form still works without the hint.
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   const dirtySheet =
     schoolName !== savedSheet.schoolName || titleTemplate !== savedSheet.titleTemplate;
@@ -97,7 +73,13 @@ export function SettingsClient({
       const response = await fetch("/api/settings", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ schoolName, titleTemplate, fillEmptySlots, zebra })
+        body: JSON.stringify({
+          schoolName,
+          titleTemplate,
+          fillEmptySlots,
+          zebra,
+          showDesignation
+        })
       });
       const data = (await response.json().catch(() => null)) as { error?: string } | null;
       if (!response.ok) throw new Error(data?.error || "Could not save settings.");
@@ -110,9 +92,13 @@ export function SettingsClient({
     }
   }
 
-  async function updateToggle(key: "fillEmptySlots" | "zebra", value: boolean) {
+  async function updateToggle(
+    key: "fillEmptySlots" | "zebra" | "showDesignation",
+    value: boolean
+  ) {
     if (key === "fillEmptySlots") setFillEmptySlots(value);
-    else setZebra(value);
+    else if (key === "zebra") setZebra(value);
+    else setShowDesignation(value);
 
     setSavingToggle(key);
     try {
@@ -125,15 +111,24 @@ export function SettingsClient({
           schoolName: savedSheet.schoolName,
           titleTemplate: savedSheet.titleTemplate,
           fillEmptySlots: key === "fillEmptySlots" ? value : fillEmptySlots,
-          zebra: key === "zebra" ? value : zebra
+          zebra: key === "zebra" ? value : zebra,
+          showDesignation: key === "showDesignation" ? value : showDesignation
         })
       });
       const data = (await response.json().catch(() => null)) as { error?: string } | null;
       if (!response.ok) throw new Error(data?.error || "Could not save settings.");
-      toast(key === "fillEmptySlots" ? "Empty slot filling turned " + (value ? "on." : "off.") : "Zebra shading turned " + (value ? "on." : "off."));
+
+      const message =
+        key === "fillEmptySlots"
+          ? "Empty slot filling turned " + (value ? "on." : "off.")
+          : key === "zebra"
+            ? "Zebra shading turned " + (value ? "on." : "off.")
+            : "Designation under name turned " + (value ? "on." : "off.");
+      toast(message);
     } catch (error) {
       if (key === "fillEmptySlots") setFillEmptySlots(!value);
-      else setZebra(!value);
+      else if (key === "zebra") setZebra(!value);
+      else setShowDesignation(!value);
       toast(error instanceof Error ? error.message : "Could not save settings.", "error");
     } finally {
       setSavingToggle(null);
@@ -189,46 +184,6 @@ export function SettingsClient({
       toast(error instanceof Error ? error.message : "Could not reset the logo.", "error");
     } finally {
       setResetting(false);
-    }
-  }
-
-  async function saveAccount(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (savingAccount) return;
-
-    setAccountError(null);
-
-    if (!username.trim()) {
-      setAccountError("Enter a username.");
-      return;
-    }
-    if (newPassword.length < 8) {
-      setAccountError("The new password must be at least 8 characters.");
-      return;
-    }
-    if (newPassword !== confirmPassword) {
-      setAccountError("The new passwords do not match.");
-      return;
-    }
-
-    setSavingAccount(true);
-    try {
-      const response = await fetch("/api/admin", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username: username.trim(), currentPassword, newPassword })
-      });
-      const data = (await response.json().catch(() => null)) as { error?: string } | null;
-      if (!response.ok) throw new Error(data?.error || "Could not update the account.");
-      setCurrentPassword("");
-      setNewPassword("");
-      setConfirmPassword("");
-      setAccountUsername(username.trim());
-      toast("Admin account updated.");
-    } catch (error) {
-      setAccountError(error instanceof Error ? error.message : "Could not update the account.");
-    } finally {
-      setSavingAccount(false);
     }
   }
 
@@ -320,81 +275,19 @@ export function SettingsClient({
               label="Zebra row shading"
               description="Light grey shading on every second day row to keep the eye on the line."
             />
+            <Switch
+              checked={showDesignation}
+              onChange={(value) => void updateToggle("showDesignation", value)}
+              disabled={savingToggle !== null}
+              label="Show designation under name"
+              description="Print each person's designation (e.g. Head Teacher) under their name in a smaller font."
+            />
             {savingToggle ? (
               <p className="flex items-center gap-2 text-xs text-slate-500">
                 <Spinner className="h-3.5 w-3.5" />
                 Saving…
               </p>
             ) : null}
-          </CardBody>
-        </Card>
-
-        <Card>
-          <CardHeader
-            title="Admin account"
-            description="Change the username or password used to sign in."
-          />
-          <CardBody>
-            <form onSubmit={saveAccount} className="space-y-4">
-              <Field
-                label="Username"
-                htmlFor="admin-username"
-                hint={accountUsername ? `Currently: ${accountUsername}` : undefined}
-              >
-                <Input
-                  id="admin-username"
-                  value={username}
-                  autoComplete="username"
-                  onChange={(event) => setUsername(event.target.value)}
-                />
-              </Field>
-
-              <Field label="Current password" htmlFor="current-password">
-                <Input
-                  id="current-password"
-                  type="password"
-                  autoComplete="current-password"
-                  value={currentPassword}
-                  onChange={(event) => setCurrentPassword(event.target.value)}
-                  required
-                />
-              </Field>
-
-              <div className="grid gap-4 sm:grid-cols-2">
-                <Field label="New password" htmlFor="new-password" hint="At least 8 characters">
-                  <Input
-                    id="new-password"
-                    type="password"
-                    autoComplete="new-password"
-                    value={newPassword}
-                    onChange={(event) => setNewPassword(event.target.value)}
-                    required
-                  />
-                </Field>
-                <Field label="Confirm new password" htmlFor="confirm-password">
-                  <Input
-                    id="confirm-password"
-                    type="password"
-                    autoComplete="new-password"
-                    value={confirmPassword}
-                    onChange={(event) => setConfirmPassword(event.target.value)}
-                    required
-                  />
-                </Field>
-              </div>
-
-              {accountError ? (
-                <p className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
-                  {accountError}
-                </p>
-              ) : null}
-
-              <div className="flex items-center justify-end gap-2">
-                <Button type="submit" loading={savingAccount} icon={<UserRoundCog className="h-4 w-4" />}>
-                  Update account
-                </Button>
-              </div>
-            </form>
           </CardBody>
         </Card>
       </div>

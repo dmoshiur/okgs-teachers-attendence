@@ -67,7 +67,7 @@ export function LoginForm({ nextPath }: { nextPath: string }) {
         <div className="rounded-2xl border border-white/10 bg-white p-6 shadow-2xl sm:p-8">
           <div className="mb-5 flex items-center gap-2 text-sm font-semibold text-slate-700">
             <ShieldCheck className="h-4 w-4 text-school-600" />
-            Admin sign in
+            Sign in
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-4">
@@ -113,7 +113,7 @@ export function LoginForm({ nextPath }: { nextPath: string }) {
           </form>
 
           <p className="mt-5 text-center text-xs leading-5 text-slate-400">
-            The first admin account is created from your environment variables.
+            Accounts are created and managed by a super admin.
           </p>
         </div>
       </div>

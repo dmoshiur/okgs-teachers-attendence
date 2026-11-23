@@ -1,8 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import { eq } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 import { ensureReady } from "@/lib/db";
 import { admins } from "@/lib/schema";
-import { createSessionToken, setSessionCookie, verifyPassword } from "@/lib/auth";
+import {
+  createSessionToken,
+  setSessionCookie,
+  verifyPassword,
+  isSuperAdmin
+} from "@/lib/auth";
 import { loginSchema } from "@/lib/validation";
 import { firstIssue } from "@/lib/api";
 
@@ -17,10 +22,11 @@ export async function POST(request: NextRequest) {
     }
 
     const db = await ensureReady();
+    // Usernames are unique ignoring case, so the lookup must be too.
     const admin = await db
       .select()
       .from(admins)
-      .where(eq(admins.username, parsed.data.username))
+      .where(sql`lower(${admins.username}) = ${parsed.data.username.trim().toLowerCase()}`)
       .get();
 
     if (!admin) {
@@ -32,10 +38,27 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Invalid username or password" }, { status: 401 });
     }
 
-    const token = await createSessionToken({ adminId: admin.id, username: admin.username });
+    // A deactivated account may hold a valid password; it still cannot sign in.
+    if (!admin.isActive) {
+      return NextResponse.json(
+        { error: "This account has been deactivated. Ask a super admin to restore it." },
+        { status: 403 }
+      );
+    }
+
+    const token = await createSessionToken({
+      adminId: admin.id,
+      username: admin.username,
+      role: isSuperAdmin(admin.role) ? "super_admin" : "admin"
+    });
     await setSessionCookie(token);
 
-    return NextResponse.json({ ok: true, username: admin.username });
+    return NextResponse.json({
+      ok: true,
+      username: admin.username,
+      displayName: admin.displayName || admin.username,
+      role: admin.role
+    });
   } catch (error) {
     console.error("[auth] login failed", error);
     return NextResponse.json({ error: "Login failed. Please try again." }, { status: 500 });

@@ -6,6 +6,7 @@ export type AppSettings = {
   titleTemplate: string;
   fillEmptySlots: boolean;
   zebra: boolean;
+  showDesignation: boolean;
 };
 
 export const DEFAULT_TITLE_TEMPLATE = "Teachers Attendance Sheet, {Month}-{Year}";
@@ -15,7 +16,8 @@ export function getDefaultSettings(): AppSettings {
     schoolName: process.env.SCHOOL_NAME?.trim() || "Your School Name",
     titleTemplate: DEFAULT_TITLE_TEMPLATE,
     fillEmptySlots: true,
-    zebra: true
+    zebra: true,
+    showDesignation: false
   };
 }
 
@@ -28,7 +30,8 @@ export async function getSettings(): Promise<AppSettings> {
     schoolName: map.get("school_name") || fallback.schoolName,
     titleTemplate: map.get("title_template") || fallback.titleTemplate,
     fillEmptySlots: (map.get("fill_empty_slots") ?? "true") !== "false",
-    zebra: (map.get("zebra") ?? "true") !== "false"
+    zebra: (map.get("zebra") ?? "true") !== "false",
+    showDesignation: (map.get("show_designation") ?? "false") === "true"
   };
 }
 
@@ -38,7 +41,8 @@ export async function updateSettings(input: AppSettings): Promise<void> {
     { key: "school_name", value: input.schoolName },
     { key: "title_template", value: input.titleTemplate },
     { key: "fill_empty_slots", value: input.fillEmptySlots ? "true" : "false" },
-    { key: "zebra", value: input.zebra ? "true" : "false" }
+    { key: "zebra", value: input.zebra ? "true" : "false" },
+    { key: "show_designation", value: input.showDesignation ? "true" : "false" }
   ];
 
   for (const entry of entries) {
