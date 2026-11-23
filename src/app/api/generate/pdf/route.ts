@@ -5,10 +5,12 @@ import { getLogoAsPng } from "@/lib/logo";
 import { buildSheet, sheetFileName } from "@/lib/sheet";
 import { renderAttendancePdf } from "@/lib/pdf";
 import { generateQuerySchema } from "@/lib/validation";
-import { firstIssue } from "@/lib/api";
+import { firstIssue, logRouteError, publicErrorMessage } from "@/lib/api";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+const GENERIC_ERROR = "Could not generate the PDF.";
 
 export async function GET(request: NextRequest) {
   try {
@@ -22,6 +24,7 @@ export async function GET(request: NextRequest) {
     const [teachers, settings, logo] = await Promise.all([
       getActiveTeachers(),
       getSettings(),
+      // Resolves to null (and is skipped) if the logo cannot be read or decoded.
       getLogoAsPng()
     ]);
 
@@ -45,7 +48,10 @@ export async function GET(request: NextRequest) {
       }
     });
   } catch (error) {
-    console.error("[generate] PDF failed", error);
-    return NextResponse.json({ error: "Could not generate the PDF." }, { status: 500 });
+    logRouteError("generate:pdf", error);
+    return NextResponse.json(
+      { error: publicErrorMessage(GENERIC_ERROR, error) },
+      { status: 500 }
+    );
   }
 }

@@ -130,6 +130,21 @@ src/
 └── middleware.ts                # Route protection
 ```
 
+## Troubleshooting
+
+**PDF returns "Could not generate the PDF." on Vercel.** The route logs the real error to the
+function logs. The usual cause is a file that the serverless file tracer cannot see: the PDF
+and DOCX functions read the bundled `.ttf` fonts and the default logo with `fs`, and
+`@react-pdf/renderer` (which is externalised) loads `pdfkit`'s standard-font modules through
+a computed `require()`. All of these are declared in `outputFileTracingIncludes` in
+`next.config.ts` — if you move the fonts or rename the routes, update that list.
+
+To check what a function will actually ship, inspect the generated trace after `next build`:
+
+```bash
+node -e "console.log(require('./.next/server/app/api/generate/pdf/route.js.nft.json').files.filter(f => /ttf|pdfkit|logo\.png/.test(f)))"
+```
+
 ## Printing
 
 The preview **is** the generated PDF. Press **Print** and, in the browser dialog, set:
