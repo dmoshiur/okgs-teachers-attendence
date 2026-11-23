@@ -35,6 +35,11 @@ import {
 } from "./sheet";
 import type { PngLogo } from "./logo";
 
+/**
+ * Static .ttf files shipped in the repository and copied into the serverless
+ * bundle by `outputFileTracingIncludes` in next.config.ts. They are resolved
+ * from `process.cwd()`, which is the function root on Vercel.
+ */
 const FONT_DIR = path.join(process.cwd(), "src", "assets", "fonts");
 
 type FontBuffers = {
@@ -44,16 +49,30 @@ type FontBuffers = {
   bengaliBold: Buffer;
 };
 
+const FONT_FILES: Array<{ key: keyof FontBuffers; file: string }> = [
+  { key: "tinosRegular", file: "Tinos-Regular.ttf" },
+  { key: "tinosBold", file: "Tinos-Bold.ttf" },
+  { key: "bengaliRegular", file: "NotoSerifBengali-Regular.ttf" },
+  { key: "bengaliBold", file: "NotoSerifBengali-Bold.ttf" }
+];
+
 let fontBuffers: FontBuffers | null = null;
 
 function getFontBuffers(): FontBuffers {
-  if (!fontBuffers) {
-    fontBuffers = {
-      tinosRegular: fs.readFileSync(path.join(FONT_DIR, "Tinos-Regular.ttf")),
-      tinosBold: fs.readFileSync(path.join(FONT_DIR, "Tinos-Bold.ttf")),
-      bengaliRegular: fs.readFileSync(path.join(FONT_DIR, "NotoSerifBengali-Regular.ttf")),
-      bengaliBold: fs.readFileSync(path.join(FONT_DIR, "NotoSerifBengali-Bold.ttf"))
-    };
+  if (fontBuffers) return fontBuffers;
+
+  const missing = FONT_FILES.filter((entry) => !fs.existsSync(path.join(FONT_DIR, entry.file)));
+  if (missing.length > 0) {
+    throw new Error(
+      `Bundled fonts are missing from the server bundle (${missing
+        .map((entry) => entry.file)
+        .join(", ")}). Looked in ${FONT_DIR}. Check outputFileTracingIncludes in next.config.ts.`
+    );
+  }
+
+  fontBuffers = {} as FontBuffers;
+  for (const entry of FONT_FILES) {
+    fontBuffers[entry.key] = fs.readFileSync(path.join(FONT_DIR, entry.file));
   }
   return fontBuffers;
 }
@@ -232,12 +251,12 @@ function buildTable(pageTeachers: SheetSlot[], sheet: SheetData): Table {
   });
 }
 
-function buildHeader(sheet: SheetData, logo: PngLogo): Header {
+function buildHeader(sheet: SheetData, logo: PngLogo | null): Header {
   const boxWidthPx = (2.2 / 2.54) * 96;
   const boxHeightPx = (2.5 / 2.54) * 96;
-  const scale = Math.min(boxWidthPx / logo.width, boxHeightPx / logo.height);
-  const imageWidth = Math.max(1, Math.round(logo.width * scale));
-  const imageHeight = Math.max(1, Math.round(logo.height * scale));
+  const scale = logo ? Math.min(boxWidthPx / logo.width, boxHeightPx / logo.height) : 0;
+  const imageWidth = logo ? Math.max(1, Math.round(logo.width * scale)) : 0;
+  const imageHeight = logo ? Math.max(1, Math.round(logo.height * scale)) : 0;
 
   const schoolNameRuns = makeRuns(sheet.schoolName, 46, true);
   const titleRuns = makeRuns(sheet.title, 30);
@@ -247,24 +266,28 @@ function buildHeader(sheet: SheetData, logo: PngLogo): Header {
     spacing: { after: 200, line: 276, lineRule: LineRuleType.AUTO },
     children: [
       ...schoolNameRuns,
-      new ImageRun({
-        type: "png",
-        data: logo.data,
-        transformation: { width: imageWidth, height: imageHeight },
-        floating: {
-          horizontalPosition: {
-            relative: HorizontalPositionRelativeFrom.COLUMN,
-            offset: 270000
-          },
-          verticalPosition: {
-            relative: VerticalPositionRelativeFrom.PARAGRAPH,
-            offset: 20320
-          },
-          behindDocument: true,
-          allowOverlap: true,
-          wrap: { type: TextWrappingType.NONE }
-        }
-      })
+      ...(logo
+        ? [
+            new ImageRun({
+              type: "png",
+              data: logo.data,
+              transformation: { width: imageWidth, height: imageHeight },
+              floating: {
+                horizontalPosition: {
+                  relative: HorizontalPositionRelativeFrom.COLUMN,
+                  offset: 270000
+                },
+                verticalPosition: {
+                  relative: VerticalPositionRelativeFrom.PARAGRAPH,
+                  offset: 20320
+                },
+                behindDocument: true,
+                allowOverlap: true,
+                wrap: { type: TextWrappingType.NONE }
+              }
+            })
+          ]
+        : [])
     ]
   });
 
@@ -282,7 +305,7 @@ function buildHeader(sheet: SheetData, logo: PngLogo): Header {
   });
 }
 
-function buildDocument(sheet: SheetData, logo: PngLogo): Document {
+function buildDocument(sheet: SheetData, logo: PngLogo | null): Document {
   const fonts = getFontBuffers();
   const body: Array<Paragraph | Table> = [emptyParagraph({ keepNext: true })];
 
@@ -332,7 +355,10 @@ function buildDocument(sheet: SheetData, logo: PngLogo): Document {
   });
 }
 
-export async function renderAttendanceDocx(sheet: SheetData, logo: PngLogo): Promise<Buffer> {
+export async function renderAttendanceDocx(
+  sheet: SheetData,
+  logo: PngLogo | null
+): Promise<Buffer> {
   const document = buildDocument(sheet, logo);
   const buffer = await Packer.toBuffer(document);
   return Buffer.from(buffer);

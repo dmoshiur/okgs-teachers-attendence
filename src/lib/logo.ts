@@ -44,22 +44,31 @@ export async function getLogoVersion(): Promise<string> {
 }
 
 /**
- * The PDF and DOCX libraries do not reliably support WebP, so every logo is
- * decoded to PNG in memory before it is embedded.
+ * Decodes the stored logo (WebP in the database, or the bundled PNG fallback)
+ * to PNG in memory, because neither PDF nor DOCX embedders accept WebP.
+ *
+ * Never throws: the sheet is still usable without a logo, so any failure here
+ * is logged and reported as `null` instead of failing the whole document.
  */
-export async function getLogoAsPng(): Promise<PngLogo> {
-  const logo = await getLogo();
-  const { data, info } = await sharp(logo.data)
-    .resize({
-      width: LOGO_MAX_SIDE,
-      height: LOGO_MAX_SIDE,
-      fit: "inside",
-      withoutEnlargement: true
-    })
-    .png({ compressionLevel: 9 })
-    .toBuffer({ resolveWithObject: true });
+export async function getLogoAsPng(): Promise<PngLogo | null> {
+  try {
+    const logo = await getLogo();
+    const { data, info } = await sharp(logo.data)
+      .resize({
+        width: LOGO_MAX_SIDE,
+        height: LOGO_MAX_SIDE,
+        fit: "inside",
+        withoutEnlargement: true
+      })
+      .png({ compressionLevel: 9 })
+      .toBuffer({ resolveWithObject: true });
 
-  return { data, width: info.width, height: info.height };
+    return { data, width: info.width, height: info.height };
+  } catch (error) {
+    console.error("[logo] could not prepare the logo; rendering without it");
+    console.error(error instanceof Error ? error.stack ?? error.message : error);
+    return null;
+  }
 }
 
 const ALLOWED_FORMATS = new Set(["png", "jpeg", "jpg", "webp", "svg"]);

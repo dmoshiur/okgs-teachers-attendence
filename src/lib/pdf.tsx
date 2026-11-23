@@ -1,5 +1,6 @@
 import "server-only";
 import React from "react";
+import fs from "node:fs";
 import path from "node:path";
 import {
   Document,
@@ -32,13 +33,36 @@ import {
 } from "./sheet";
 import type { PngLogo } from "./logo";
 
+/**
+ * Static .ttf files shipped in the repository and copied into the serverless
+ * bundle by `outputFileTracingIncludes` in next.config.ts. They are resolved
+ * from `process.cwd()`, which is the function root on Vercel.
+ */
 const FONT_DIR = path.join(process.cwd(), "src", "assets", "fonts");
+const FONT_FILES = [
+  "Tinos-Regular.ttf",
+  "Tinos-Bold.ttf",
+  "NotoSerifBengali-Regular.ttf",
+  "NotoSerifBengali-Bold.ttf"
+] as const;
+
 const CM = 28.3464567;
 
 let fontsRegistered = false;
 
+function assertFontsPresent(): void {
+  const missing = FONT_FILES.filter((file) => !fs.existsSync(path.join(FONT_DIR, file)));
+  if (missing.length > 0) {
+    throw new Error(
+      `Bundled fonts are missing from the server bundle (${missing.join(", ")}). ` +
+        `Looked in ${FONT_DIR}. Check outputFileTracingIncludes in next.config.ts.`
+    );
+  }
+}
+
 function registerFonts() {
   if (fontsRegistered) return;
+  assertFontsPresent();
   Font.register({
     family: "Tinos",
     fonts: [
@@ -203,29 +227,31 @@ function Header({
   layout
 }: {
   sheet: SheetData;
-  logo: PngLogo;
+  logo: PngLogo | null;
   layout: Layout;
 }) {
   const boxWidth = 2.2 * CM;
   const boxHeight = 2.5 * CM;
-  const scale = Math.min(boxWidth / logo.width, boxHeight / logo.height);
-  const logoWidth = logo.width * scale;
-  const logoHeight = logo.height * scale;
+  const scale = logo ? Math.min(boxWidth / logo.width, boxHeight / logo.height) : 0;
+  const logoWidth = logo ? logo.width * scale : 0;
+  const logoHeight = logo ? logo.height * scale : 0;
 
   return (
     <>
-      <View
-        style={{
-          position: "absolute",
-          top: HEADER_TOP + 0.056 * CM,
-          left: PAGE_MARGIN + 0.75 * CM,
-          width: logoWidth,
-          height: logoHeight
-        }}
-      >
-        {/* eslint-disable-next-line jsx-a11y/alt-text -- @react-pdf Image has no alt prop */}
-        <Image src={logo.data} style={{ width: logoWidth, height: logoHeight }} />
-      </View>
+      {logo ? (
+        <View
+          style={{
+            position: "absolute",
+            top: HEADER_TOP + 0.056 * CM,
+            left: PAGE_MARGIN + 0.75 * CM,
+            width: logoWidth,
+            height: logoHeight
+          }}
+        >
+          {/* eslint-disable-next-line jsx-a11y/alt-text -- @react-pdf Image has no alt prop */}
+          <Image src={logo.data} style={{ width: logoWidth, height: logoHeight }} />
+        </View>
+      ) : null}
       <RichText
         text={sheet.schoolName}
         fontSize={23}
@@ -454,7 +480,7 @@ function SheetTable({
   );
 }
 
-function AttendanceDocument({ sheet, logo }: { sheet: SheetData; logo: PngLogo }) {
+function AttendanceDocument({ sheet, logo }: { sheet: SheetData; logo: PngLogo | null }) {
   const layout = computeLayout(sheet);
 
   return (
@@ -475,7 +501,10 @@ function AttendanceDocument({ sheet, logo }: { sheet: SheetData; logo: PngLogo }
   );
 }
 
-export async function renderAttendancePdf(sheet: SheetData, logo: PngLogo): Promise<Buffer> {
+export async function renderAttendancePdf(
+  sheet: SheetData,
+  logo: PngLogo | null
+): Promise<Buffer> {
   registerFonts();
   const buffer = await renderToBuffer(<AttendanceDocument sheet={sheet} logo={logo} />);
   return Buffer.from(buffer);
