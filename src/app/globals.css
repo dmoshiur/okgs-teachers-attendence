@@ -1,0 +1,80 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --school: #2690d1;
+  --school-dark: #1f74ad;
+  --ink: #10243a;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  @apply bg-slate-100 text-slate-900 antialiased;
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue",
+    Arial, "Noto Sans", sans-serif;
+}
+
+::selection {
+  background: #bde4ff;
+}
+
+input,
+select,
+textarea,
+button {
+  font: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid var(--school);
+  outline-offset: 2px;
+}
+
+/* Subtle dotted background for transparency previews */
+.checkerboard {
+  background-color: #fff;
+  background-image: linear-gradient(45deg, #e2e8f0 25%, transparent 25%),
+    linear-gradient(-45deg, #e2e8f0 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #e2e8f0 75%),
+    linear-gradient(-45deg, transparent 75%, #e2e8f0 75%);
+  background-size: 16px 16px;
+  background-position: 0 0, 0 8px, 8px -8px, -8px 0;
+}
+
+/* Thin, unobtrusive scrollbars for the preview area */
+.pretty-scroll::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+.pretty-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.pretty-scroll::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+.pretty-scroll::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+  background-clip: content-box;
+  border: 2px solid transparent;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
