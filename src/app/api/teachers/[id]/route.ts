@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
 import { ensureReady } from "@/lib/db";
 import { teachers, type TeacherType } from "@/lib/schema";
-import { requireActiveUser } from "@/lib/auth";
+import { requireUser } from "@/lib/auth";
 import { teacherUpdateSchema } from "@/lib/validation";
 import { firstIssue, logRouteError, publicErrorMessage } from "@/lib/api";
 
@@ -19,7 +19,7 @@ function parseId(raw: string): number | null {
 
 export async function PATCH(request: NextRequest, context: RouteContext) {
   try {
-    const auth = await requireActiveUser();
+    const auth = await requireUser();
     if (!auth.ok) return auth.response;
 
     const { id: rawId } = await context.params;
@@ -83,7 +83,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
 
 export async function DELETE(_request: NextRequest, context: RouteContext) {
   try {
-    const auth = await requireActiveUser();
+    const auth = await requireUser();
     if (!auth.ok) return auth.response;
 
     const { id: rawId } = await context.params;

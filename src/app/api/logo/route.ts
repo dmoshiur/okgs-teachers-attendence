@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getLogo } from "@/lib/logo";
-import { requireActiveUser } from "@/lib/auth";
+import { requireUser } from "@/lib/auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
   try {
-    const auth = await requireActiveUser();
+    const auth = await requireUser();
     if (!auth.ok) return auth.response;
 
     const logo = await getLogo();

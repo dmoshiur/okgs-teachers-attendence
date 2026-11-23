@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { AccountClient } from "@/components/AccountClient";
 import { Shell } from "@/components/Shell";
-import { requireActiveUserOrRedirect } from "@/lib/auth";
+import { requireUserOrRedirect } from "@/lib/auth";
 
 export const metadata: Metadata = {
   title: "My account"
@@ -10,7 +10,7 @@ export const metadata: Metadata = {
 export const dynamic = "force-dynamic";
 
 export default async function AccountPage() {
-  const user = await requireActiveUserOrRedirect();
+  const user = await requireUserOrRedirect();
 
   return (
     <Shell

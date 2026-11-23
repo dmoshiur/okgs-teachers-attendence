@@ -3,7 +3,7 @@ import { GeneratorClient } from "@/components/GeneratorClient";
 import { Shell } from "@/components/Shell";
 import { getActiveTeachers } from "@/lib/teachers";
 import { getSettings } from "@/lib/settings";
-import { requireActiveUserOrRedirect } from "@/lib/auth";
+import { requireUserOrRedirect } from "@/lib/auth";
 
 export const metadata: Metadata = {
   title: "Generator"
@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic";
 
 export default async function GeneratorPage() {
   const [user, teachers, settings] = await Promise.all([
-    requireActiveUserOrRedirect(),
+    requireUserOrRedirect(),
     getActiveTeachers(),
     getSettings()
   ]);

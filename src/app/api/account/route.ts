@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireActiveUser } from "@/lib/auth";
+import { requireUser } from "@/lib/auth";
 import { updateOwnAccount, UserError } from "@/lib/users";
 import { accountPasswordSchema, accountProfileSchema } from "@/lib/validation";
 import { firstIssue, logRouteError, publicErrorMessage } from "@/lib/api";
@@ -7,7 +7,7 @@ import { firstIssue, logRouteError, publicErrorMessage } from "@/lib/api";
 export const runtime = "nodejs";
 
 export async function GET() {
-  const auth = await requireActiveUser();
+  const auth = await requireUser();
   if (!auth.ok) return auth.response;
 
   const { user } = auth;
@@ -25,7 +25,7 @@ export async function GET() {
  */
 export async function PUT(request: NextRequest) {
   try {
-    const auth = await requireActiveUser();
+    const auth = await requireUser();
     if (!auth.ok) return auth.response;
 
     const body = await request.json().catch(() => null);

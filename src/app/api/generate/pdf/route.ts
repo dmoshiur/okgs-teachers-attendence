@@ -6,7 +6,7 @@ import { buildSheet, sheetFileName } from "@/lib/sheet";
 import { renderAttendancePdf } from "@/lib/pdf";
 import { generateQuerySchema } from "@/lib/validation";
 import { firstIssue, logRouteError, publicErrorMessage } from "@/lib/api";
-import { requireActiveUser } from "@/lib/auth";
+import { requireUser } from "@/lib/auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -15,7 +15,7 @@ const GENERIC_ERROR = "Could not generate the PDF.";
 
 export async function GET(request: NextRequest) {
   try {
-    const auth = await requireActiveUser();
+    const auth = await requireUser();
     if (!auth.ok) return auth.response;
 
     const parsed = generateQuerySchema.safeParse(

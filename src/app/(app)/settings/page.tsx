@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
 import { SettingsClient } from "@/components/SettingsClient";
 import { Shell } from "@/components/Shell";
+import { AccessDenied } from "@/components/AccessDenied";
 import { getSettings } from "@/lib/settings";
 import { getLogoVersion } from "@/lib/logo";
-import { requireSuperAdminOrRedirect } from "@/lib/auth";
+import { requireSuperAdminForPage } from "@/lib/auth";
 
 export const metadata: Metadata = {
   title: "Settings"
@@ -12,11 +13,22 @@ export const metadata: Metadata = {
 export const dynamic = "force-dynamic";
 
 export default async function SettingsPage() {
-  const [user, settings, logoVersion] = await Promise.all([
-    requireSuperAdminOrRedirect(),
-    getSettings(),
-    getLogoVersion()
-  ]);
+  const auth = await requireSuperAdminForPage();
+
+  if (!auth.ok) {
+    // A plain admin keeps the URL and gets a clear permission screen instead of
+    // being silently bounced to the home page.
+    return (
+      <AccessDenied
+        role={auth.user.role}
+        displayName={auth.user.displayName || auth.user.username}
+        page="Settings"
+      />
+    );
+  }
+
+  const user = auth.user;
+  const [settings, logoVersion] = await Promise.all([getSettings(), getLogoVersion()]);
 
   return (
     <Shell
